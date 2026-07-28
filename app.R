@@ -49,9 +49,9 @@ ui <- page_navbar(
     ),
     conditionalPanel(
       condition = "input.data_source_mode == 'odk'",
-      textInput("odk_url", "Server URL", placeholder = "https://your-central-server.org"),
-      textInput("odk_project", "Project ID", placeholder = "e.g. 4"),
-      textInput("odk_form", "Form ID (xmlFormId)", placeholder = "e.g. uganda_evd_ipc_scorecard"),
+      textInput("odk_url", "Server URL", placeholder = "https://mohodk.dataug.net/projects/31/forms/Uganda%20EVD%20IPC%20Scorecard%20V2%20(3)/"),
+      textInput("odk_project", "Project ID", placeholder = "PM202211.07.23"),
+      textInput("odk_form", "Form ID (xmlFormId)", placeholder = "IPC EVD Score Card 2025 (3)"),
       textInput("odk_email", "Email"),
       passwordInput("odk_password", "Password"),
       actionButton("odk_fetch", "\U0001F680 Fetch Data", class = "btn-primary"),
