@@ -17,8 +17,40 @@ All three tabs, plus a live ODK Central connection:
     boxes, Single Assessment Snapshot, Domain Change diverging chart
   - **Custom baseline anchor** (sidebar) drives every baseline-dependent
     calculation across Summary View and Facility Deep Dive
-  - **Data Source**: File Upload (always works, fully offline) or ODK
-    Central API (live, browser-side — see the CORS note below)
+  - **Data Source**: auto-connects live to ODK Central on load, no login
+    required by whoever opens the dashboard (credentials are configured
+    once, server-side). A CSV file-upload checkbox is available as a
+    fallback/testing option.
+
+## 0. Ready-to-use test files (no setup needed)
+
+Two files are included so you can test the dashboard immediately:
+- **`ipc_test_data_uganda.csv`** — your real sample data, already in the
+  right format. Select **Uganda (15-domain XLSForm)** under Data Format,
+  then upload this.
+- **`ipc_test_data_drc.csv`** — the DRC file you shared, usable as-is
+  (see the note below on what's approximate about it). Select
+  **DRC (17-domain)** under Data Format, then upload this.
+
+## 0.5. Two data formats are now supported
+
+The sidebar has a **Data Format** selector above Data Source:
+- **Uganda (15-domain XLSForm)** — the original build, unchanged.
+- **DRC (17-domain)** — a different national version of the IPC RAT tool
+  entirely (17 domains, not 15, already pre-scored, French-language field
+  names). All three tabs work with either format, since both feed the same
+  downstream structure.
+
+**Important limitation on DRC data**: the DRC export has no accompanying
+domain-name/max-points documentation (Uganda's XLSForm gave us that).
+Overall score and status (Critical/At Risk/Ready) are exact, since
+`score_pct` is already provided directly in the file. But **domain-level**
+percentages (the heatmap, Domain Change chart, Single Assessment Snapshot)
+estimate each domain's max as the highest score observed in your uploaded
+data — a real ceiling might be higher, which would make DRC domain-level
+colors/percentages read too favorably. If you can get the DRC scorecard's
+actual domain names and max-points-per-domain (the DRC equivalent of
+Uganda's XLSForm), send it over and I'll wire in exact values.
 
 ## 1. Install packages
 
@@ -29,73 +61,71 @@ install.packages(c(
 ))
 ```
 
-## 2. Test it as a normal Shiny app first
+## 2. Configure your ODK Central credentials
+
+The dashboard reads five environment variables — set these locally (for
+testing) and later on whatever platform hosts it (e.g. Posit Connect
+Cloud's "Environment Variables" section, same as your Kobo/REDCap
+dashboards):
+
+```
+ODK_URL=https://your-central-server.org
+ODK_PROJECT=4
+ODK_FORM=your_xmlFormId
+ODK_EMAIL=dashboard-viewer@yourorg.org
+ODK_PASSWORD=that_accounts_password
+```
+
+For local testing, put these in a `.Renviron` file in the project folder
+(same pattern as the other dashboards). `ODK_EMAIL` must be a **staff
+User account** — App User tokens can only submit data, not read it. Worth
+asking your ODK Central admin for a dedicated read-only "Viewer" role
+account for this dashboard, rather than using a personal admin login,
+since the credentials live in this config permanently now (not typed
+per-session by each viewer).
+
+## 3. Test it locally first
 
 ```r
 setwd("path/to/ipc_dashboard")
 shiny::runApp("app.R")
 ```
 
-Try both data sources:
-- **File Upload**: use a CSV export in the ODK Central "group-fieldname"
-  format (save `Sample_dataset.xlsx` as CSV to test).
-- **ODK Central API**: server URL, project ID, form ID (the `xmlFormId`,
-  visible in Central's form settings), your email, and password. This
-  must be a **staff User account** (App User tokens can't read data, only
-  submit it) — consider asking your ODK Central admin for a dedicated
-  read-only "Viewer" role account for this dashboard rather than using a
-  personal admin login.
+No login screen — it connects automatically on load using the env vars
+above, and the sidebar shows a live status line (green = connected with a
+submission count and last-synced time, red = an error message). It
+re-polls every 60 seconds (`REFRESH_SECONDS` in `ipc_helpers.R`) — no
+manual refresh needed once a new submission comes in from the field.
 
-## 3. About the ODK Central live connection — read this before relying on it
+The "Use a CSV file instead of the live connection" checkbox in the
+sidebar is still there as a fallback (e.g. `ipc_test_data_uganda.csv` or
+`ipc_test_data_drc.csv`) — useful for testing without hitting the live
+server, or if the connection is ever down.
 
-The fetch works by logging into ODK Central (`POST /v1/sessions`) to get a
-session token, then downloading the flat submissions CSV
+## 4. How the connection works, and what can go wrong
+
+The fetch logs into ODK Central (`POST /v1/sessions`) to get a session
+token, then downloads the flat submissions CSV
 (`GET /v1/projects/{id}/forms/{formId}/submissions.csv`) — the same shape
 as a manual "Export Submissions" download, so it reuses the exact same
-cleaning code as file upload.
+cleaning code as file upload. This repeats on every poll (fresh login
+each time), so there's no session-expiry issue to worry about.
 
-**The real risk is CORS.** Since this request runs in your browser
-against a different domain (your dashboard's URL vs. your ODK Central
-server), the browser will block the response unless your ODK Central
-server sends CORS headers permitting your dashboard's origin. Most
-Central deployments don't have this enabled by default. If the fetch
-fails with what looks like a network error (rather than a login/auth
-error), that's almost certainly it — your server admin would need to
-configure this, likely at the reverse-proxy (nginx) level in front of
-Central. **File Upload always works regardless of this**, so it's the
-reliable fallback.
-
-I also haven't been able to test this against a real ODK Central server
-myself (no server access, no R environment here) — treat this as a solid
-first attempt built correctly against ODK's documented API, not something
-verified end-to-end. Come back with whatever error you hit and I'll help
-debug it.
-
-## 4. Once it's working: export to shinylive
-
-```r
-install.packages("shinylive")
-shinylive::export(appdir = "path/to/ipc_dashboard", destdir = "ipc_dashboard_site")
-```
-
-Preview locally:
-```r
-httpuv::runStaticServer("ipc_dashboard_site")
-```
-
-As before, I haven't been able to test this export step myself. `leaflet`,
-`DT`, and `plotly` are all `htmlwidgets`-based and generally work in
-shinylive; `curl` (used for the ODK connection) running inside
-WebAssembly is the piece I'm least certain about — webR is documented to
-proxy HTTP requests through the browser's `fetch()`, but if the ODK
-Central option breaks specifically after export (while working fine in
-step 2's normal Shiny test), that's the first place to look.
+Since this runs as a normal server-hosted Shiny app (not the offline
+shinylive version), **CORS is not a concern** — the request happens on
+the server, not in anyone's browser. The realistic failure modes are:
+- **Wrong URL/Project ID/Form ID** → clear error in the status line
+- **Wrong credentials** → 401/403 error in the status line
+- **The hosting platform can't reach your ODK Central server at all**
+  (firewall, private network) → times out after 20-30 seconds with a
+  clear message, rather than hanging silently
 
 ## 5. Host it
 
-Same as the original tool — push `ipc_dashboard_site` to a GitHub repo and
-enable GitHub Pages on it, giving you a
-`https://<username>.github.io/<repo>/` link to share.
+Same Posit Connect Cloud process as your Kobo/REDCap dashboards: push
+`app.R` and `ipc_helpers.R` to a GitHub repo, `rsconnect::writeManifest()`,
+publish from Connect Cloud with the five `ODK_*` variables set as
+Environment Variables in the publish dialog (not in the code).
 
 ## A data quality note (carried over from the first build)
 

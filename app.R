@@ -1,11 +1,13 @@
 # ==============================================================================
 # Ebola IPC Assessment Analysis Dashboard -- full 3-tab version
 # ==============================================================================
-# Built to run as a shinylive (WebAssembly) app: everything happens in the
-# browser. File upload always works fully offline/client-side. The ODK
-# Central live-connect option performs a browser-side HTTP request to your
-# server -- see the CORS caveat in odk_fetch_submissions_csv() in
-# ipc_helpers.R and in README.md if that option doesn't work for you.
+# Deployed as a normal server-hosted Shiny app (e.g. Posit Connect Cloud).
+# Auto-connects to ODK Central on load and re-polls every REFRESH_SECONDS
+# (set in ipc_helpers.R) -- no login required by whoever opens the
+# dashboard. Credentials are configured once, server-side, as environment
+# variables (ODK_URL/ODK_PROJECT/ODK_FORM/ODK_EMAIL/ODK_PASSWORD). A CSV
+# file-upload fallback is still available via a sidebar checkbox, useful
+# for testing or if the live connection is ever down.
 #
 # Tabs: Outbreak Response, Summary View, Facility Deep Dive.
 # ==============================================================================
@@ -26,6 +28,20 @@ EMPTY_MSG <- function(type = "bar", msg = "No data") {
   plotly_empty(type = type) |> layout(title = msg)
 }
 
+tab_header <- function(icon_emoji, title, subtitle, color) {
+  div(
+    style = paste0("border-bottom: 3px solid ", color, "; padding-bottom: 10px; margin-bottom: 15px;"),
+    div(
+      style = "display: flex; align-items: center; gap: 12px;",
+      span(style = "font-size: 2rem;", icon_emoji),
+      div(
+        h3(style = paste0("color: ", color, "; margin: 0;"), title),
+        p(class = "text-muted", style = "margin: 0;", subtitle)
+      )
+    )
+  )
+}
+
 # ------------------------------------------------------------------------------
 # UI
 # ------------------------------------------------------------------------------
@@ -37,26 +53,23 @@ ui <- page_navbar(
   sidebar = sidebar(
     width = 320,
 
-    h5("\U0001F4C2 Data Source"),
-    radioButtons("data_source_mode", NULL,
-                 choices = c("\U0001F4C4 File Upload" = "file", "\U0001F310 ODK Central API" = "odk"),
-                 selected = "file"),
-
+    h5("\U0001F310 Data Format"),
+    radioButtons("data_format", NULL,
+                 choices = c("Uganda (15-domain XLSForm)" = "uganda", "DRC (17-domain)" = "drc"),
+                 selected = "uganda"),
     conditionalPanel(
-      condition = "input.data_source_mode == 'file'",
-      fileInput("data_file", "Upload ODK Central CSV export", accept = ".csv"),
-      p(class = "text-muted small", "Processed entirely in your browser; never uploaded anywhere.")
-    ),
-    conditionalPanel(
-      condition = "input.data_source_mode == 'odk'",
-      textInput("odk_url", "Server URL", placeholder = "https://mohodk.dataug.net/projects/31/forms/Uganda%20EVD%20IPC%20Scorecard%20V2%20(3)/"),
-      textInput("odk_project", "Project ID", placeholder = "PM202211.07.23"),
-      textInput("odk_form", "Form ID (xmlFormId)", placeholder = "IPC EVD Score Card 2025 (3)"),
-      textInput("odk_email", "Email"),
-      passwordInput("odk_password", "Password"),
-      actionButton("odk_fetch", "\U0001F680 Fetch Data", class = "btn-primary"),
+      condition = "input.data_format == 'drc'",
       p(class = "text-muted small",
-        "Credentials are used only for this fetch, in your browser, and are never stored or saved. If this fails with a network error (not an auth error), your ODK Central server likely needs CORS enabled for this dashboard's URL -- ask your admin, or use File Upload instead.")
+        "DRC domain names/max-points aren't documented in the source file, so domain-level percentages are estimated (max = highest score observed in your data) -- treat as approximate. Overall score/status is exact either way.")
+    ),
+
+    hr(),
+    h5("\U0001F4C2 Data Source"),
+    uiOutput("odk_status"),
+    checkboxInput("use_file_upload", "Use a CSV file instead of the live connection", value = FALSE),
+    conditionalPanel(
+      condition = "input.use_file_upload == true",
+      fileInput("data_file", "Upload CSV (Uganda ODK export, or DRC RAT export)", accept = ".csv")
     ),
 
     hr(),
@@ -94,6 +107,8 @@ ui <- page_navbar(
   # ============================================================================
   nav_panel(
     "\U0001F6A8 Outbreak Response",
+    tab_header("\U0001F6A8", "Outbreak Response",
+               "Cross-facility snapshot for prioritizing response, based on each facility's latest assessment", "#dc3545"),
     uiOutput("no_data_banner"),
 
     layout_columns(
@@ -118,16 +133,18 @@ ui <- page_navbar(
   # ============================================================================
   nav_panel(
     "\U0001F310 Summary View",
+    tab_header("\U0001F310", "Summary View",
+               "Multi-facility trajectories anchored to each facility's first assessment", "#0d6efd"),
     uiOutput("no_data_banner_2"),
 
     layout_columns(
       col_widths = c(4, 4, 4, 4, 4, 4),
-      value_box(title = "Facilities Tracked", value = textOutput("sv_kpi_facilities"), showcase = icon("hospital")),
-      value_box(title = "Avg. Assessments / Facility", value = textOutput("sv_kpi_avg_assess"), showcase = icon("clipboard-list")),
-      value_box(title = "Median \u0394 Total Score (since baseline)", value = textOutput("sv_kpi_median_delta"), showcase = icon("arrow-trend-up")),
-      value_box(title = "Median Follow-up (days)", value = textOutput("sv_kpi_median_followup"), showcase = icon("calendar-days")),
-      value_box(title = "Total Assessments", value = textOutput("sv_kpi_total_assess"), showcase = icon("list-check")),
-      value_box(title = "Last 30 / Last 7 Days", value = textOutput("sv_kpi_recent"), showcase = icon("clock"))
+      value_box(title = "Facilities Tracked", value = textOutput("sv_kpi_facilities"), showcase = div(style = "font-size: 1.8rem;", "\U0001F3E5")),
+      value_box(title = "Avg. Assessments / Facility", value = textOutput("sv_kpi_avg_assess"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4CB")),
+      value_box(title = "Median \u0394 Total Score (since baseline)", value = textOutput("sv_kpi_median_delta"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4C8")),
+      value_box(title = "Median Follow-up (days)", value = textOutput("sv_kpi_median_followup"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4C5")),
+      value_box(title = "Total Assessments", value = textOutput("sv_kpi_total_assess"), showcase = div(style = "font-size: 1.8rem;", "\U00002705")),
+      value_box(title = "Last 30 / Last 7 Days", value = textOutput("sv_kpi_recent"), showcase = div(style = "font-size: 1.8rem;", "\U0001F550"))
     ),
 
     card(
@@ -153,6 +170,8 @@ ui <- page_navbar(
   # ============================================================================
   nav_panel(
     "\U0001F3E5 Facility Deep Dive",
+    tab_header("\U0001F3E5", "Facility Deep Dive",
+               "Detailed inspection of a single facility -- use the selectors below", "#198754"),
     uiOutput("no_data_banner_3"),
 
     layout_columns(
@@ -163,9 +182,9 @@ ui <- page_navbar(
 
     layout_columns(
       col_widths = c(4, 4, 4),
-      value_box(title = "Assessments Since Baseline", value = textOutput("dd_kpi_since_baseline"), showcase = icon("chart-line")),
-      value_box(title = "Assessments (Last 30 Days)", value = textOutput("dd_kpi_last30"), showcase = icon("calendar-days")),
-      value_box(title = "Assessments (Last 7 Days)", value = textOutput("dd_kpi_last7"), showcase = icon("clock"))
+      value_box(title = "Assessments Since Baseline", value = textOutput("dd_kpi_since_baseline"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4C8")),
+      value_box(title = "Assessments (Last 30 Days)", value = textOutput("dd_kpi_last30"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4C5")),
+      value_box(title = "Assessments (Last 7 Days)", value = textOutput("dd_kpi_last7"), showcase = div(style = "font-size: 1.8rem;", "\U0001F550"))
     ),
 
     layout_columns(
@@ -187,43 +206,70 @@ ui <- page_navbar(
 server <- function(input, output, session) {
 
   # ==== DATA LOADING ====
-  odk_data <- reactiveVal(NULL)
+  # Auto-connects to ODK Central on load and re-polls every REFRESH_SECONDS
+  # -- no login form, no button. Credentials come from the server-side
+  # env vars set in ipc_helpers.R (ODK_URL/ODK_PROJECT/ODK_FORM/ODK_EMAIL/
+  # ODK_PASSWORD). Every team member who opens this dashboard just sees
+  # live data automatically.
+  odk_poll <- reactivePoll(
+    intervalMillis = REFRESH_SECONDS * 1000,
+    session = session,
+    checkFunc = function() Sys.time(),
+    valueFunc = function() {
+      if (ODK_URL == "" || ODK_PROJECT == "" || ODK_FORM == "" || ODK_EMAIL == "" || ODK_PASSWORD == "") {
+        return(list(data = NULL, error = "ODK Central connection not configured (missing environment variables)."))
+      }
+      tryCatch(
+        list(data = odk_fetch_submissions_csv(ODK_URL, ODK_PROJECT, ODK_FORM, ODK_EMAIL, ODK_PASSWORD), error = NULL),
+        error = function(e) list(data = NULL, error = conditionMessage(e))
+      )
+    }
+  )
 
-  observeEvent(input$odk_fetch, {
-    req(input$odk_url, input$odk_project, input$odk_form, input$odk_email, input$odk_password)
-    tryCatch({
-      d <- odk_fetch_submissions_csv(input$odk_url, input$odk_project, input$odk_form,
-                                      input$odk_email, input$odk_password)
-      odk_data(d)
-      showNotification(paste0("Loaded ", nrow(d), " submissions from ODK Central."), type = "message")
-    }, error = function(e) {
-      showNotification(paste("ODK Central fetch failed:", conditionMessage(e)), type = "error", duration = NULL)
-    })
+  output$odk_status <- renderUI({
+    if (isTRUE(input$use_file_upload)) {
+      return(p(class = "text-muted small", "Live connection paused while using file upload."))
+    }
+    res <- odk_poll()
+    if (!is.null(res$error)) {
+      return(div(class = "alert alert-danger", style = "font-size: 0.85rem; padding: 8px;",
+                  paste("\U000026A0 Connection issue:", res$error)))
+    }
+    div(class = "alert alert-success", style = "font-size: 0.85rem; padding: 8px;",
+        paste0("\U0001F7E2 Live -- ", nrow(res$data), " submissions -- last synced ", format(Sys.time(), "%H:%M:%S")))
   })
 
   raw_data <- reactive({
-    if (input$data_source_mode == "odk") {
-      req(odk_data())
-      odk_data()
-    } else {
+    if (isTRUE(input$use_file_upload)) {
       req(input$data_file)
       read_csv(input$data_file$datapath, col_types = cols(.default = "c"), show_col_types = FALSE)
+    } else {
+      res <- odk_poll()
+      req(res$data)
+      res$data
     }
   })
 
   clean_data <- reactive({
     req(raw_data())
-    clean_ipc_data(raw_data())
+    if (input$data_format == "drc") clean_ipc_data_drc(raw_data()) else clean_ipc_data(raw_data())
+  })
+
+  active_domains <- reactive({
+    if (input$data_format == "drc") DOMAINS_DRC else DOMAINS
   })
 
   has_data <- reactive({
-    (input$data_source_mode == "file" && !is.null(input$data_file)) ||
-      (input$data_source_mode == "odk" && !is.null(odk_data()))
+    if (isTRUE(input$use_file_upload)) {
+      !is.null(input$data_file)
+    } else {
+      !is.null(odk_poll()$data)
+    }
   })
 
   no_data_banner_ui <- function() {
     if (!has_data()) {
-      div(class = "alert alert-info", "Load data via the sidebar's \U0001F4C2 Data Source panel to get started.")
+      div(class = "alert alert-info", "Waiting on the live ODK Central connection -- see status in the sidebar's \U0001F4C2 Data Source panel.")
     }
   }
   output$no_data_banner <- renderUI(no_data_banner_ui())
@@ -231,6 +277,11 @@ server <- function(input, output, session) {
   output$no_data_banner_3 <- renderUI(no_data_banner_ui())
 
   # ==== FILTER CHOICES ====
+  observeEvent(input$data_format, {
+    ad <- active_domains()
+    updateSelectizeInput(session, "f_domains", choices = setNames(ad$id, ad$label), selected = ad$id, server = FALSE)
+  }, ignoreNULL = FALSE)
+
   observeEvent(clean_data(), {
     df <- clean_data()
     if (nrow(df) == 0) return()
@@ -259,7 +310,7 @@ server <- function(input, output, session) {
 
   selected_domain_ids <- reactive({
     ids <- as.integer(input$f_domains)
-    if (length(ids) == 0) DOMAINS$id else ids
+    if (length(ids) == 0) active_domains()$id else ids
   })
 
   # ==== BASELINE-SCOPED DATA (Summary View + Facility Deep Dive) ====
@@ -308,7 +359,7 @@ server <- function(input, output, session) {
   domain_long_selected <- reactive({
     snap <- latest_snapshot()
     if (nrow(snap) == 0) return(snap)
-    build_domain_long(snap) %>% filter(domain_id %in% selected_domain_ids())
+    build_domain_long(snap, active_domains()) %>% filter(domain_id %in% selected_domain_ids())
   })
 
   output$kpi_critical <- renderText({ snap <- latest_snapshot(); if (nrow(snap) == 0) "--" else sum(snap$overall_category == "Critical", na.rm = TRUE) })
@@ -447,10 +498,10 @@ server <- function(input, output, session) {
 
     baseline_domains <- df %>% filter(date_of_assessment == baseline_date) %>%
       group_by(facility) %>% slice_head(n = 1) %>% ungroup() %>%
-      build_domain_long() %>% select(facility, domain_id, label, baseline_pct = pct)
+      build_domain_long(domains_table = active_domains()) %>% select(facility, domain_id, label, baseline_pct = pct)
 
     latest_domains <- df %>% group_by(facility) %>% slice_max(date_of_assessment, n = 1, with_ties = FALSE) %>% ungroup() %>%
-      build_domain_long() %>% select(facility, domain_id, label, latest_pct = pct)
+      build_domain_long(domains_table = active_domains()) %>% select(facility, domain_id, label, latest_pct = pct)
 
     change_df <- baseline_domains %>%
       inner_join(latest_domains, by = c("facility", "domain_id", "label")) %>%
@@ -533,7 +584,7 @@ server <- function(input, output, session) {
   output$snapshot_chart <- renderPlotly({
     row <- dd_selected_row()
     if (nrow(row) == 0) return(EMPTY_MSG())
-    dl <- build_domain_long(row) %>% filter(domain_id %in% selected_domain_ids())
+    dl <- build_domain_long(row, active_domains()) %>% filter(domain_id %in% selected_domain_ids())
     plot_ly(dl, x = ~label, y = ~pct, type = "bar", marker = list(color = CATEGORY_COLORS[dl$category])) |>
       layout(
         shapes = list(
@@ -547,9 +598,9 @@ server <- function(input, output, session) {
   output$snapshot_table <- renderDT({
     row <- dd_selected_row(); brow <- dd_baseline_row()
     if (nrow(row) == 0) return(datatable(data.frame(Message = "No data"), rownames = FALSE))
-    dl <- build_domain_long(row) %>% select(domain_id, label, score = pct, category)
+    dl <- build_domain_long(row, active_domains()) %>% select(domain_id, label, score = pct, category)
     if (nrow(brow) > 0) {
-      bl <- build_domain_long(brow) %>% select(domain_id, baseline_pct = pct)
+      bl <- build_domain_long(brow, active_domains()) %>% select(domain_id, baseline_pct = pct)
       dl <- dl %>% left_join(bl, by = "domain_id") %>% mutate(change = round(score - baseline_pct, 1))
     } else {
       dl$change <- NA
@@ -563,8 +614,8 @@ server <- function(input, output, session) {
   output$dd_diverging_chart <- renderPlotly({
     row <- dd_selected_row(); brow <- dd_baseline_row()
     if (nrow(row) == 0 || nrow(brow) == 0) return(EMPTY_MSG("bar", "No baseline available for this facility under the current settings"))
-    dl <- build_domain_long(row) %>% select(domain_id, label, pct)
-    bl <- build_domain_long(brow) %>% select(domain_id, baseline_pct = pct)
+    dl <- build_domain_long(row, active_domains()) %>% select(domain_id, label, pct)
+    bl <- build_domain_long(brow, active_domains()) %>% select(domain_id, baseline_pct = pct)
     change_df <- dl %>% inner_join(bl, by = "domain_id") %>%
       mutate(delta = round(pct - baseline_pct, 1)) %>%
       filter(domain_id %in% selected_domain_ids()) %>%

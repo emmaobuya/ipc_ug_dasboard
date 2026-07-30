@@ -19,6 +19,22 @@ library(curl)
 library(jsonlite)
 
 # ------------------------------------------------------------------------------
+# ODK Central connection config -- set these as environment variables on
+# whatever platform hosts this app (e.g. Posit Connect Cloud's "Environment
+# Variables" section), NOT hardcoded here. This replaces the earlier
+# runtime-login form: credentials are configured once by whoever deploys the
+# app, and every team member who opens the dashboard just sees live data --
+# no login required on their end.
+# ------------------------------------------------------------------------------
+ODK_URL      <- Sys.getenv("ODK_URL", unset = "https://mohodk.dataug.net")
+ODK_PROJECT  <- Sys.getenv("ODK_PROJECT", unset = "31")
+ODK_FORM     <- Sys.getenv("ODK_FORM", unset = "PM202211.07.23")
+ODK_EMAIL    <- Sys.getenv("ODK_EMAIL", unset = "ipcview@gmail.com")
+ODK_PASSWORD <- Sys.getenv("ODK_PASSWORD", unset = "ipcview")
+
+REFRESH_SECONDS <- 180  # how often the dashboard re-polls ODK Central
+
+# ------------------------------------------------------------------------------
 # Choice-code lookups (from the XLSForm "choices" sheet) -- ODK Central's raw
 # CSV export uses these codes, not labels, for select_one fields.
 # ------------------------------------------------------------------------------
@@ -156,7 +172,7 @@ clean_ipc_data <- function(raw) {
 
 # Reshapes the wide domain_<id>_score/_max/_pct columns into one row per
 # facility x domain -- used by the domain heatmap and dispatch table.
-build_domain_long <- function(df) {
+build_domain_long <- function(df, domains_table = DOMAINS) {
   df %>%
     select(facility, region, district, subcounty, facility_level,
            date_of_assessment, assessment_round,
@@ -167,8 +183,69 @@ build_domain_long <- function(df) {
       names_pattern = "domain_(\\d+)_(.*)"
     ) %>%
     mutate(domain_id = as.integer(domain_id)) %>%
-    left_join(DOMAINS %>% select(id, label), by = c("domain_id" = "id")) %>%
+    left_join(domains_table %>% select(id, label), by = c("domain_id" = "id")) %>%
     mutate(category = score_to_category(pct))
+}
+
+# ------------------------------------------------------------------------------
+# DRC variant of the IPC RAT -- a genuinely different scorecard (17 domains,
+# not Uganda's 15), already pre-scored in a flat French-language CSV. No
+# choice-decoding needed here (scores are already numeric), but critically:
+# the source file has NO domain names or max-points documentation attached
+# (unlike Uganda, which had its XLSForm). Domain labels below are placeholder
+# numbers, and each domain's "max" is ESTIMATED as the highest score
+# observed for that domain in the uploaded data -- NOT a real ceiling. This
+# means DRC domain-level percentages/colors are approximate, for testing
+# layout only, until real domain names + max points are provided (the DRC
+# equivalent of Uganda's XLSForm) -- overall score/category is NOT affected
+# by this, since score_pct is already given directly in the file.
+DOMAINS_DRC <- tibble(
+  id = 1:17,
+  label = paste0("Domain ", 1:17, " (score_s", 1:17, ") -- name unknown, see caveat"),
+  raw_col = paste0("score_s", 1:17)
+)
+
+DRC_LEVEL_LOOKUP <- c(
+  "primaire"   = "Primary",
+  "secondaire" = "Secondary",
+  "tertiaire"  = "Tertiary"
+)
+
+clean_ipc_data_drc <- function(raw) {
+  get_col <- function(df, name) if (name %in% names(df)) df[[name]] else NA
+
+  df <- raw %>%
+    mutate(
+      facility = as.character(get_col(raw, "nom_etablissement")),
+      region = as.character(get_col(raw, "province")),
+      district = as.character(get_col(raw, "district")),
+      subcounty = as.character(get_col(raw, "sous_district")),
+      facility_level = decode_choice(get_col(raw, "niveau_installation"), DRC_LEVEL_LOOKUP),
+      authority = NA_character_,
+      hf_type = NA_character_,
+      assessment_round = NA_character_,
+      date_of_assessment = suppressWarnings(mdy(get_col(raw, "date_evaluation"))),
+      lat = suppressWarnings(as.numeric(get_col(raw, "_coordonnees_gps_latitude"))),
+      lon = suppressWarnings(as.numeric(get_col(raw, "_coordonnees_gps_longitude"))),
+      overall_score = suppressWarnings(as.numeric(get_col(raw, "score_total_brut"))),
+      overall_total = NA_real_,
+      overall_pct = suppressWarnings(as.numeric(get_col(raw, "score_pct"))),
+      overall_category = score_to_category(overall_pct)
+    ) %>%
+    filter(!is.na(facility), facility != "")
+
+  for (i in seq_len(nrow(DOMAINS_DRC))) {
+    d <- DOMAINS_DRC[i, ]
+    score_val <- suppressWarnings(as.numeric(get_col(df, d$raw_col)))
+    est_max <- suppressWarnings(max(score_val, na.rm = TRUE))
+    if (!is.finite(est_max) || est_max <= 0) est_max <- NA
+    pct_val <- ifelse(!is.na(est_max), round(100 * score_val / est_max, 1), NA)
+    df[[paste0("domain_", d$id, "_score")]] <- score_val
+    df[[paste0("domain_", d$id, "_max")]] <- est_max
+    df[[paste0("domain_", d$id, "_pct")]] <- pct_val
+  }
+
+  df
 }
 
 # ------------------------------------------------------------------------------
@@ -219,14 +296,17 @@ compute_baseline_scoped <- function(df, use_custom = FALSE, target_date = NULL, 
 # version requirement caused real problems in our other two dashboards, and
 # `curl` avoids that dependency entirely.
 #
-# IMPORTANT CAVEAT: this performs a cross-origin browser request from
-# wherever this shinylive app is hosted (e.g. GitHub Pages) to your ODK
-# Central server. Browsers block that unless the server sends CORS headers
-# permitting your dashboard's origin. Many ODK Central deployments don't
-# have this enabled by default -- if the fetch fails with a network/CORS
-# error (not an auth error), that's almost certainly the cause, and your
-# server admin would need to enable CORS for your dashboard's URL. The
-# file-upload path always works regardless of this.
+# DEPLOYMENT-DEPENDENT CAVEAT:
+# - If deployed as a normal server-hosted Shiny app (e.g. Posit Connect
+#   Cloud, as tested so far), this request runs ON THE SERVER, so CORS does
+#   not apply. The real risks here are network reachability (can Connect
+#   Cloud's servers actually reach your ODK Central server?), wrong
+#   URL/IDs, or wrong credentials -- all of which now surface as a clear
+#   error/timeout rather than a silent hang, per the timeouts below.
+# - If exported to shinylive (runs in the browser instead), THEN this
+#   becomes a cross-origin request and CORS would apply -- the server
+#   would need to allow your dashboard's origin. Not a concern for the
+#   current server-hosted deployment.
 odk_fetch_submissions_csv <- function(server, project_id, form_id, email, password) {
   server <- sub("/+$", "", server)
 
@@ -234,10 +314,11 @@ odk_fetch_submissions_csv <- function(server, project_id, form_id, email, passwo
   login_h <- new_handle()
   handle_setheaders(login_h, "Content-Type" = "application/json")
   handle_setopt(login_h, postfields = toJSON(list(email = email, password = password), auto_unbox = TRUE))
+  handle_setopt(login_h, timeout = 20, connecttimeout = 10)
 
   login_resp <- tryCatch(
     curl_fetch_memory(paste0(server, "/v1/sessions"), handle = login_h),
-    error = function(e) stop("Could not reach ODK Central server (network or CORS issue): ", conditionMessage(e))
+    error = function(e) stop("Could not reach ODK Central server within 20 seconds (network, firewall, or wrong URL): ", conditionMessage(e))
   )
 
   if (login_resp$status_code >= 400) {
@@ -251,10 +332,11 @@ odk_fetch_submissions_csv <- function(server, project_id, form_id, email, passwo
   csv_url <- paste0(server, "/v1/projects/", project_id, "/forms/", form_id, "/submissions.csv")
   data_h <- new_handle()
   handle_setheaders(data_h, "Authorization" = paste("Bearer", token))
+  handle_setopt(data_h, timeout = 30, connecttimeout = 10)
 
   data_resp <- tryCatch(
     curl_fetch_memory(csv_url, handle = data_h),
-    error = function(e) stop("Could not fetch submissions (network or CORS issue): ", conditionMessage(e))
+    error = function(e) stop("Could not fetch submissions within 30 seconds (network, firewall, or wrong Project/Form ID): ", conditionMessage(e))
   )
 
   if (data_resp$status_code >= 400) {
