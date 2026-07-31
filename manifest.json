@@ -1061,6 +1061,41 @@
         "RemoteSha": "1.6.6"
       }
     },
+    "gargle": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com",
+      "description": {
+        "Package": "gargle",
+        "Title": "Utilities for Working with Google APIs",
+        "Version": "1.6.0",
+        "Authors@R": "c(\n    person(\"Jennifer\", \"Bryan\", , \"jenny@posit.co\", role = c(\"aut\", \"cre\"),\n           comment = c(ORCID = \"0000-0002-6983-2759\")),\n    person(\"Craig\", \"Citro\", , \"craigcitro@google.com\", role = \"aut\"),\n    person(\"Hadley\", \"Wickham\", , \"hadley@posit.co\", role = \"aut\",\n           comment = c(ORCID = \"0000-0003-4757-117X\")),\n    person(\"Google Inc\", role = \"cph\"),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
+        "Description": "Provides utilities for working with Google APIs\n    <https://developers.google.com/apis-explorer>.  This includes\n    functions and classes for handling common credential types and for\n    preparing, executing, and processing HTTP requests.",
+        "License": "MIT + file LICENSE",
+        "URL": "https://gargle.r-lib.org, https://github.com/r-lib/gargle",
+        "BugReports": "https://github.com/r-lib/gargle/issues",
+        "Depends": "R (>= 3.6)",
+        "Imports": "cli (>= 3.0.1), fs (>= 1.3.1), glue (>= 1.3.0), httr (>=\n1.4.5), jsonlite, lifecycle (>= 0.2.0), openssl, rappdirs,\nrlang (>= 1.1.0), stats, utils, withr",
+        "Suggests": "aws.ec2metadata, aws.signature, covr, httpuv, knitr,\nrmarkdown, sodium, spelling, testthat (>= 3.1.7)",
+        "VignetteBuilder": "knitr",
+        "Config/Needs/website": "tidyverse/tidytemplate",
+        "Config/testthat/edition": "3",
+        "Encoding": "UTF-8",
+        "Language": "en-US",
+        "RoxygenNote": "7.3.2.9000",
+        "NeedsCompilation": "no",
+        "Packaged": "2025-09-03 02:41:38 UTC; jenny",
+        "Author": "Jennifer Bryan [aut, cre] (ORCID:\n    <https://orcid.org/0000-0002-6983-2759>),\n  Craig Citro [aut],\n  Hadley Wickham [aut] (ORCID: <https://orcid.org/0000-0003-4757-117X>),\n  Google Inc [cph],\n  Posit Software, PBC [cph, fnd]",
+        "Maintainer": "Jennifer Bryan <jenny@posit.co>",
+        "Repository": "CRAN",
+        "Date/Publication": "2025-09-03 05:10:02 UTC",
+        "Built": "R 4.5.1; ; 2025-09-29 02:09:04 UTC; windows",
+        "RemoteType": "standard",
+        "RemotePkgRef": "gargle",
+        "RemoteRef": "gargle",
+        "RemoteRepos": "https://cran.rstudio.com",
+        "RemoteSha": "1.6.0"
+      }
+    },
     "generics": {
       "Source": "CRAN",
       "Repository": "https://cran.rstudio.com",
@@ -1166,6 +1201,41 @@
         "RemoteRef": "glue",
         "RemoteRepos": "https://cran.rstudio.com",
         "RemoteSha": "1.8.0"
+      }
+    },
+    "googledrive": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com",
+      "description": {
+        "Package": "googledrive",
+        "Title": "An Interface to Google Drive",
+        "Version": "2.1.2",
+        "Authors@R": "c(\n    person(\"Lucy\", \"D'Agostino McGowan\", , role = \"aut\"),\n    person(\"Jennifer\", \"Bryan\", , \"jenny@posit.co\", role = c(\"aut\", \"cre\"),\n           comment = c(ORCID = \"0000-0002-6983-2759\")),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
+        "Description": "Manage Google Drive files from R.",
+        "License": "MIT + file LICENSE",
+        "URL": "https://googledrive.tidyverse.org,\nhttps://github.com/tidyverse/googledrive",
+        "BugReports": "https://github.com/tidyverse/googledrive/issues",
+        "Depends": "R (>= 4.1)",
+        "Imports": "cli (>= 3.0.0), gargle (>= 1.6.0), glue (>= 1.4.2), httr,\njsonlite, lifecycle, magrittr, pillar (>= 1.9.0), purrr (>=\n1.0.1), rlang (>= 1.0.2), tibble (>= 2.0.0), utils, uuid, vctrs\n(>= 0.3.0), withr",
+        "Suggests": "curl, dplyr (>= 1.0.0), knitr, rmarkdown, spelling, testthat\n(>= 3.1.5)",
+        "VignetteBuilder": "knitr",
+        "Config/Needs/website": "tidyverse, tidyverse/tidytemplate",
+        "Config/testthat/edition": "3",
+        "Encoding": "UTF-8",
+        "Language": "en-US",
+        "RoxygenNote": "7.3.3",
+        "NeedsCompilation": "no",
+        "Packaged": "2025-09-10 06:10:03 UTC; jenny",
+        "Author": "Lucy D'Agostino McGowan [aut],\n  Jennifer Bryan [aut, cre] (ORCID:\n    <https://orcid.org/0000-0002-6983-2759>),\n  Posit Software, PBC [cph, fnd]",
+        "Maintainer": "Jennifer Bryan <jenny@posit.co>",
+        "Repository": "CRAN",
+        "Date/Publication": "2025-09-10 08:50:06 UTC",
+        "Built": "R 4.5.3; ; 2026-07-28 16:21:46 UTC; windows",
+        "RemoteType": "standard",
+        "RemotePkgRef": "googledrive",
+        "RemoteRef": "googledrive",
+        "RemoteRepos": "https://cran.rstudio.com",
+        "RemoteSha": "2.1.2"
       }
     },
     "gtable": {
@@ -3113,6 +3183,34 @@
         "RemoteSha": "1.2.6"
       }
     },
+    "uuid": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com",
+      "description": {
+        "Package": "uuid",
+        "Version": "1.2-1",
+        "Title": "Tools for Generating and Handling of UUIDs",
+        "Author": "Simon Urbanek [aut, cre, cph] (https://urbanek.org,\n    <https://orcid.org/0000-0003-2297-1732>),\n  Theodore Ts'o [aut, cph] (libuuid)",
+        "Maintainer": "Simon Urbanek <Simon.Urbanek@r-project.org>",
+        "Authors@R": "c(person(\"Simon\", \"Urbanek\", role=c(\"aut\",\"cre\",\"cph\"), email=\"Simon.Urbanek@r-project.org\", comment=c(\"https://urbanek.org\", ORCID=\"0000-0003-2297-1732\")), person(\"Theodore\",\"Ts'o\", email=\"tytso@thunk.org\", role=c(\"aut\",\"cph\"), comment=\"libuuid\"))",
+        "Depends": "R (>= 2.9.0)",
+        "Description": "Tools for generating and handling of UUIDs (Universally Unique Identifiers).",
+        "License": "MIT + file LICENSE",
+        "URL": "https://www.rforge.net/uuid",
+        "BugReports": "https://github.com/s-u/uuid/issues",
+        "NeedsCompilation": "yes",
+        "Packaged": "2024-07-29 03:16:54 UTC; rforge",
+        "Repository": "CRAN",
+        "Date/Publication": "2024-07-29 07:09:22 UTC",
+        "Built": "R 4.5.0; x86_64-w64-mingw32; 2025-04-08 00:43:45 UTC; windows",
+        "Archs": "x64",
+        "RemoteType": "standard",
+        "RemotePkgRef": "uuid",
+        "RemoteRef": "uuid",
+        "RemoteRepos": "https://cran.rstudio.com",
+        "RemoteSha": "1.2-1"
+      }
+    },
     "vctrs": {
       "Source": "CRAN",
       "Repository": "https://cran.rstudio.com",
@@ -3288,6 +3386,39 @@
         "RemoteSha": "0.9.4"
       }
     },
+    "writexl": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com",
+      "description": {
+        "Package": "writexl",
+        "Type": "Package",
+        "Title": "Export Data Frames to Excel 'xlsx' Format",
+        "Version": "1.5.4",
+        "Authors@R": "c(\n    person(\"Jeroen\", \"Ooms\", ,\"jeroenooms@gmail.com\", role = c(\"aut\", \"cre\"),\n      comment = c(ORCID = \"0000-0002-4035-0289\")),\n    person(\"John McNamara\", role = \"cph\",\n      comment = \"Author of libxlsxwriter (see AUTHORS and COPYRIGHT files for details)\"))",
+        "Description": "Zero-dependency data frame to xlsx exporter based on 'libxlsxwriter'\n    <https://libxlsxwriter.github.io>. Fast and no Java or Excel required.",
+        "License": "BSD_2_clause + file LICENSE",
+        "Encoding": "UTF-8",
+        "URL": "https://ropensci.r-universe.dev/writexl\nhttps://docs.ropensci.org/writexl/",
+        "BugReports": "https://github.com/ropensci/writexl/issues",
+        "RoxygenNote": "7.0.2",
+        "Suggests": "spelling, readxl, nycflights13, testthat, bit64",
+        "Language": "en-US",
+        "SystemRequirements": "zlib",
+        "NeedsCompilation": "yes",
+        "Packaged": "2025-04-15 13:34:41 UTC; jeroen",
+        "Author": "Jeroen Ooms [aut, cre] (<https://orcid.org/0000-0002-4035-0289>),\n  John McNamara [cph] (Author of libxlsxwriter (see AUTHORS and COPYRIGHT\n    files for details))",
+        "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
+        "Repository": "CRAN",
+        "Date/Publication": "2025-04-15 14:40:03 UTC",
+        "Built": "R 4.5.3; x86_64-w64-mingw32; 2026-07-28 13:38:55 UTC; windows",
+        "Archs": "x64",
+        "RemoteType": "standard",
+        "RemotePkgRef": "writexl",
+        "RemoteRef": "writexl",
+        "RemoteRepos": "https://cran.rstudio.com",
+        "RemoteSha": "1.5.4"
+      }
+    },
     "xfun": {
       "Source": "CRAN",
       "Repository": "https://cran.rstudio.com",
@@ -3429,7 +3560,7 @@
       "checksum": "a63ed0a3ad9e14ac70c24ce2c66dd204"
     },
     "renv.lock": {
-      "checksum": "91bd05ee427a7e90d7ccc27bf5e1c35a"
+      "checksum": "93670830f32c9155bedad5f028a07c21"
     },
     "Sample dataset.xlsx": {
       "checksum": "b3dac5f3a982579ad0336ce45cb1b654"
