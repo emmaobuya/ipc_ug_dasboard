@@ -1,15 +1,15 @@
 # ==============================================================================
-# Ebola IPC Assessment Analysis Dashboard -- full 3-tab version
+# Ebola IPC Assessment Analysis Dashboard
 # ==============================================================================
 # Deployed as a normal server-hosted Shiny app (e.g. Posit Connect Cloud).
 # Auto-connects to ODK Central on load and re-polls every REFRESH_SECONDS
 # (set in ipc_helpers.R) -- no login required by whoever opens the
 # dashboard. Credentials are configured once, server-side, as environment
-# variables (ODK_URL/ODK_PROJECT/ODK_FORM/ODK_EMAIL/ODK_PASSWORD). A CSV
+# variables (ODK_URL/ODK_PROJECT/ODK_FORM/ODK_TOKEN). A CSV
 # file-upload fallback is still available via a sidebar checkbox, useful
 # for testing or if the live connection is ever down.
 #
-# Tabs: Outbreak Response, Summary View, Facility Deep Dive.
+# Tabs: IPC Overall Update, Summary View, Facility Deep Dive.
 # ==============================================================================
 
 library(shiny)
@@ -21,6 +21,7 @@ library(lubridate)
 library(DT)
 library(plotly)
 library(leaflet)
+library(writexl)
 
 source("ipc_helpers.R")
 
@@ -48,7 +49,7 @@ tab_header <- function(icon_emoji, title, subtitle, color) {
 ui <- page_navbar(
   title = "Ebola IPC Assessment Dashboard",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
-  fillable = TRUE,
+  fillable = FALSE,
 
   sidebar = sidebar(
     width = 320,
@@ -103,29 +104,70 @@ ui <- page_navbar(
   ),
 
   # ============================================================================
-  # TAB 1: Outbreak Response
+  # TAB: IPC Overall Update -- today's assessment activity
   # ============================================================================
   nav_panel(
-    "\U0001F6A8 Outbreak Response",
-    tab_header("\U0001F6A8", "Outbreak Response",
-               "Cross-facility snapshot for prioritizing response, based on each facility's latest assessment", "#dc3545"),
-    uiOutput("no_data_banner"),
+    "\U0001F4C5 IPC Overall Update",
+    tab_header("\U0001F4C5", "IPC Overall Update",
+               "Assessment activity for the selected date range -- also uses the Region/District/Subcounty filters in the sidebar", "#6f42c1"),
+    uiOutput("no_data_banner_today"),
 
     layout_columns(
-      col_widths = c(4, 4, 4),
-      value_box(title = "\U0001F534 Critical", value = textOutput("kpi_critical"), theme = "danger"),
-      value_box(title = "\U0001F7E1 At Risk", value = textOutput("kpi_at_risk"), theme = "warning"),
-      value_box(title = "\U0001F7E2 Ready", value = textOutput("kpi_ready"), theme = "success")
+      col_widths = c(6, 6),
+      dateRangeInput("today_date_range", "\U0001F4C5 Date Range", start = as.Date("2025-01-01"), end = Sys.Date()),
+      selectizeInput("today_status_filter", "\U0001F6A6 Status (table below only)",
+                      choices = c("Critical", "At Risk", "Ready"), multiple = TRUE,
+                      options = list(placeholder = "All statuses"))
     ),
 
-    card(card_header("\U0001F6A6 Outbreak Readiness Index"), plotlyOutput("readiness_chart", height = "500px")),
-    card(card_header("\U0001F7E2\U0001F7E1\U0001F534 Assessment Domain Scores"), plotlyOutput("domain_heatmap", height = "500px")),
-    card(
-      card_header("\U0001F5FA\uFE0F Facility Map"),
-      p(class = "text-muted small", "Requires latitude/longitude in the uploaded data."),
-      leafletOutput("facility_map", height = "500px")
+    layout_columns(
+      col_widths = c(2, 3, 2, 2, 3),
+      value_box(title = "Total Assessments", value = textOutput("today_kpi_total"), showcase = div(style = "font-size: 1.8rem;", "\U0001F4CB")),
+      value_box(title = "Unique HFs Assessed", value = textOutput("today_kpi_unique_hf"), showcase = div(style = "font-size: 1.8rem;", "\U0001F3E5")),
+      value_box(title = "\U0001F534 Red (Critical)", value = textOutput("today_kpi_red"), theme = "danger"),
+      value_box(title = "\U0001F7E1 Yellow (At Risk)", value = textOutput("today_kpi_yellow"), theme = "warning"),
+      value_box(title = "\U0001F7E2 Green (Ready)", value = textOutput("today_kpi_green"), theme = "success")
     ),
-    card(card_header("\U0001F4CB Dispatch Decision Table"), DTOutput("dispatch_table"))
+
+    card(
+      full_screen = TRUE,
+      card_header("Assessments in Selected Range"),
+      downloadButton("today_table_download", "\U0001F4E5 Download Excel", class = "btn-sm mb-2", style = "width: fit-content;"),
+      DTOutput("today_table")
+    )
+  ),
+
+  # ============================================================================
+  # TAB: Repeat Assessments -- follow-up visits only (baseline excluded)
+  # ============================================================================
+  nav_panel(
+    "\U0001F501 Repeat Assessments",
+    tab_header("\U0001F501", "Repeat Assessments",
+               "Follow-up visits only -- each facility's first-ever (baseline) assessment is excluded. Also uses the Region/District/Subcounty filters in the sidebar.", "#fd7e14"),
+    uiOutput("no_data_banner_repeat"),
+
+    layout_columns(
+      col_widths = c(6, 6),
+      dateRangeInput("repeat_date_range", "\U0001F4C5 Date Range", start = as.Date("2025-01-01"), end = Sys.Date()),
+      selectizeInput("repeat_status_filter", "\U0001F6A6 Status (table below only)",
+                      choices = c("Critical", "At Risk", "Ready"), multiple = TRUE,
+                      options = list(placeholder = "All statuses"))
+    ),
+
+    layout_columns(
+      col_widths = c(3, 3, 3, 3),
+      value_box(title = "Total Repeat Assessments", value = textOutput("repeat_kpi_total"), showcase = div(style = "font-size: 1.8rem;", "\U0001F501")),
+      value_box(title = "\U0001F534 Red (Critical)", value = textOutput("repeat_kpi_red"), theme = "danger"),
+      value_box(title = "\U0001F7E1 Yellow (At Risk)", value = textOutput("repeat_kpi_yellow"), theme = "warning"),
+      value_box(title = "\U0001F7E2 Green (Ready)", value = textOutput("repeat_kpi_green"), theme = "success")
+    ),
+
+    card(
+      full_screen = TRUE,
+      card_header("Repeat Assessments Line List"),
+      downloadButton("repeat_table_download", "\U0001F4E5 Download Excel", class = "btn-sm mb-2", style = "width: fit-content;"),
+      DTOutput("repeat_table")
+    )
   ),
 
   # ============================================================================
@@ -147,19 +189,19 @@ ui <- page_navbar(
       value_box(title = "Last 30 / Last 7 Days", value = textOutput("sv_kpi_recent"), showcase = div(style = "font-size: 1.8rem;", "\U0001F550"))
     ),
 
-    card(
+    card(full_screen = TRUE, 
       card_header("\U0001F4C8 Total Score Trajectory"),
       radioButtons("trend_filter", NULL, inline = TRUE,
                    choices = c("All", "Increasing", "Decreasing", "Static"), selected = "All"),
       plotlyOutput("trajectory_chart", height = "550px")
     ),
 
-    card(
+    card(full_screen = TRUE, 
       card_header("\U0001F7E5\U0001F7E9 Change from Baseline (by domain)"),
       plotlyOutput("change_heatmap", height = "500px")
     ),
 
-    card(
+    card(full_screen = TRUE, 
       card_header("\U0001F4CB Facility Progress Summary"),
       DTOutput("progress_table")
     )
@@ -189,11 +231,11 @@ ui <- page_navbar(
 
     layout_columns(
       col_widths = c(7, 5),
-      card(card_header("\U0001F4CA Single Assessment Snapshot"), plotlyOutput("snapshot_chart", height = "500px")),
-      card(card_header("Domain Detail"), DTOutput("snapshot_table"))
+      card(full_screen = TRUE, card_header("\U0001F4CA Single Assessment Snapshot"), plotlyOutput("snapshot_chart", height = "500px")),
+      card(full_screen = TRUE, card_header("Domain Detail"), DTOutput("snapshot_table"))
     ),
 
-    card(
+    card(full_screen = TRUE, 
       card_header("\U0001F4CA Domain Change Since Baseline (Diverging View)"),
       plotlyOutput("dd_diverging_chart", height = "500px")
     )
@@ -206,21 +248,28 @@ ui <- page_navbar(
 server <- function(input, output, session) {
 
   # ==== DATA LOADING ====
-  # Auto-connects to ODK Central on load and re-polls every REFRESH_SECONDS
-  # -- no login form, no button. Credentials come from the server-side
-  # env vars set in ipc_helpers.R (ODK_URL/ODK_PROJECT/ODK_FORM/ODK_EMAIL/
-  # ODK_PASSWORD). Every team member who opens this dashboard just sees
-  # live data automatically.
+  # Auto-connects on load and re-polls every REFRESH_SECONDS -- no login
+  # form, no button. If DATA_URL is set, polls that (a plain CSV kept
+  # up-to-date by export_to_drive.R running somewhere with ODK access).
+  # Otherwise connects to ODK Central directly using ODK_URL/ODK_PROJECT/
+  # ODK_FORM/ODK_TOKEN. Either way, every team member who opens this
+  # dashboard just sees live data automatically.
   odk_poll <- reactivePoll(
     intervalMillis = REFRESH_SECONDS * 1000,
     session = session,
     checkFunc = function() Sys.time(),
     valueFunc = function() {
-      if (ODK_URL == "" || ODK_PROJECT == "" || ODK_FORM == "" || ODK_EMAIL == "" || ODK_PASSWORD == "") {
-        return(list(data = NULL, error = "ODK Central connection not configured (missing environment variables)."))
+      if (DATA_URL != "") {
+        return(tryCatch(
+          list(data = fetch_csv_from_url(DATA_URL), error = NULL),
+          error = function(e) list(data = NULL, error = conditionMessage(e))
+        ))
+      }
+      if (ODK_URL == "" || ODK_PROJECT == "" || ODK_FORM == "" || ODK_TOKEN == "") {
+        return(list(data = NULL, error = "Neither DATA_URL nor the ODK Central connection is configured (missing environment variables)."))
       }
       tryCatch(
-        list(data = odk_fetch_submissions_csv(ODK_URL, ODK_PROJECT, ODK_FORM, ODK_EMAIL, ODK_PASSWORD), error = NULL),
+        list(data = odk_fetch_submissions_csv(ODK_URL, ODK_PROJECT, ODK_FORM, ODK_TOKEN), error = NULL),
         error = function(e) list(data = NULL, error = conditionMessage(e))
       )
     }
@@ -231,12 +280,13 @@ server <- function(input, output, session) {
       return(p(class = "text-muted small", "Live connection paused while using file upload."))
     }
     res <- odk_poll()
+    source_label <- if (DATA_URL != "") "Drive file" else "ODK Central"
     if (!is.null(res$error)) {
       return(div(class = "alert alert-danger", style = "font-size: 0.85rem; padding: 8px;",
-                  paste("\U000026A0 Connection issue:", res$error)))
+                  paste0("\U000026A0 Connection issue (", source_label, "): ", res$error)))
     }
     div(class = "alert alert-success", style = "font-size: 0.85rem; padding: 8px;",
-        paste0("\U0001F7E2 Live -- ", nrow(res$data), " submissions -- last synced ", format(Sys.time(), "%H:%M:%S")))
+        paste0("\U0001F7E2 Live (", source_label, ") -- ", nrow(res$data), " submissions -- last synced ", format(Sys.time(), "%H:%M:%S")))
   })
 
   raw_data <- reactive({
@@ -253,6 +303,14 @@ server <- function(input, output, session) {
   clean_data <- reactive({
     req(raw_data())
     if (input$data_format == "drc") clean_ipc_data_drc(raw_data()) else clean_ipc_data(raw_data())
+  })
+
+  # Adds assessment_seq / is_repeat / followup_number, computed across each
+  # facility's FULL history (not just whatever's currently filtered) --
+  # baseline is always that facility's earliest-ever submission, regardless
+  # of date filters applied downstream.
+  data_with_sequence <- reactive({
+    compute_assessment_sequence(clean_data())
   })
 
   active_domains <- reactive({
@@ -272,7 +330,6 @@ server <- function(input, output, session) {
       div(class = "alert alert-info", "Waiting on the live ODK Central connection -- see status in the sidebar's \U0001F4C2 Data Source panel.")
     }
   }
-  output$no_data_banner <- renderUI(no_data_banner_ui())
   output$no_data_banner_2 <- renderUI(no_data_banner_ui())
   output$no_data_banner_3 <- renderUI(no_data_banner_ui())
 
@@ -289,15 +346,24 @@ server <- function(input, output, session) {
     updateSelectizeInput(session, "f_district", choices = sort(unique(na.omit(df$district))), server = FALSE)
     updateSelectizeInput(session, "f_subcounty", choices = sort(unique(na.omit(df$subcounty))), server = FALSE)
     updateSelectizeInput(session, "f_level", choices = sort(unique(na.omit(df$facility_level))), server = FALSE)
-    updateSelectizeInput(session, "f_facility", choices = sort(unique(na.omit(df$facility))), server = FALSE)
+    updateSelectizeInput(session, "f_facility", choices = sort(unique(na.omit(df$facility))), server = TRUE)
     if (any(!is.na(df$date_of_assessment))) {
       updateDateInput(session, "baseline_target_date", value = min(df$date_of_assessment, na.rm = TRUE))
+      # Date Range on IPC Overall Update defaults to spanning ALL data
+      # (min to max) rather than today-only, so "Total Assessments" and
+      # everything else on that tab start out showing the full picture.
+      updateDateRangeInput(session, "today_date_range",
+                            start = min(df$date_of_assessment, na.rm = TRUE),
+                            end = max(df$date_of_assessment, na.rm = TRUE))
+      updateDateRangeInput(session, "repeat_date_range",
+                            start = min(df$date_of_assessment, na.rm = TRUE),
+                            end = max(df$date_of_assessment, na.rm = TRUE))
     }
   })
 
   # ==== VIEW CONTROLS FILTER ====
   filtered_data <- reactive({
-    df <- clean_data()
+    df <- data_with_sequence()
     if (nrow(df) == 0) return(df)
     if (!is.na(input$min_date)) df <- df %>% filter(is.na(date_of_assessment) | date_of_assessment >= input$min_date)
     if (length(input$f_region) > 0) df <- df %>% filter(region %in% input$f_region)
@@ -348,79 +414,167 @@ server <- function(input, output, session) {
   })
 
   # ============================================================================
-  # TAB 1: Outbreak Response
+  # TAB: IPC Overall Update -- assessment activity for a selected date range
   # ============================================================================
-  latest_snapshot <- reactive({
+  # Uses filtered_data() (already respects the sidebar's Region/District/
+  # Subcounty filters, plus Facility Level/Facility if set), narrowed to the
+  # Date Range picker on this tab (defaults to today only, but can be widened
+  # to any period). Every assessment in range counts here, not just each
+  # facility's latest -- if a facility was assessed twice in the range, both show.
+  today_assessments <- reactive({
     df <- filtered_data()
     if (nrow(df) == 0) return(df)
-    latest_per_facility(df)
+    req(input$today_date_range)
+    df %>% filter(
+      !is.na(date_of_assessment),
+      date_of_assessment >= input$today_date_range[1],
+      date_of_assessment <= input$today_date_range[2]
+    )
   })
 
-  domain_long_selected <- reactive({
-    snap <- latest_snapshot()
-    if (nrow(snap) == 0) return(snap)
-    build_domain_long(snap, active_domains()) %>% filter(domain_id %in% selected_domain_ids())
+  output$no_data_banner_today <- renderUI(no_data_banner_ui())
+
+  output$today_kpi_total <- renderText({ format(nrow(today_assessments()), big.mark = ",") })
+  output$today_kpi_unique_hf <- renderText({
+    df <- today_assessments(); if (nrow(df) == 0) return("0")
+    format(n_distinct(df$facility), big.mark = ",")
+  })
+  output$today_kpi_red <- renderText({
+    df <- today_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "Critical", na.rm = TRUE)
+  })
+  output$today_kpi_yellow <- renderText({
+    df <- today_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "At Risk", na.rm = TRUE)
+  })
+  output$today_kpi_green <- renderText({
+    df <- today_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "Ready", na.rm = TRUE)
   })
 
-  output$kpi_critical <- renderText({ snap <- latest_snapshot(); if (nrow(snap) == 0) "--" else sum(snap$overall_category == "Critical", na.rm = TRUE) })
-  output$kpi_at_risk  <- renderText({ snap <- latest_snapshot(); if (nrow(snap) == 0) "--" else sum(snap$overall_category == "At Risk", na.rm = TRUE) })
-  output$kpi_ready    <- renderText({ snap <- latest_snapshot(); if (nrow(snap) == 0) "--" else sum(snap$overall_category == "Ready", na.rm = TRUE) })
-
-  output$readiness_chart <- renderPlotly({
-    snap <- latest_snapshot()
-    if (nrow(snap) == 0) return(EMPTY_MSG())
-    snap <- snap %>% arrange(overall_pct)
-    plot_ly(snap, y = ~factor(facility, levels = facility), x = ~overall_pct,
-            type = "bar", orientation = "h",
-            marker = list(color = CATEGORY_COLORS[snap$overall_category]),
-            text = ~paste0(round(overall_pct, 1), "%"), textposition = "outside") |>
-      layout(yaxis = list(title = "", tickfont = list(size = 9)),
-             xaxis = list(title = "Overall IPC Score (%)", range = c(0, 105)),
-             height = max(500, nrow(snap) * 18))
-  })
-
-  output$domain_heatmap <- renderPlotly({
-    dl <- domain_long_selected()
-    if (nrow(dl) == 0) return(EMPTY_MSG("heatmap"))
-    plot_ly(dl, x = ~label, y = ~facility, z = ~pct, type = "heatmap",
-            colorscale = list(c(0, "#dc3545"), c(0.5, "#ffc107"), c(1, "#28a745")),
-            zmin = 0, zmax = 100,
-            text = ~paste0(facility, " / ", label, ": ", pct, "%"), hoverinfo = "text") |>
-      layout(xaxis = list(title = "", tickangle = -35), yaxis = list(title = "", tickfont = list(size = 9)),
-             height = max(500, n_distinct(dl$facility) * 18))
-  })
-
-  output$facility_map <- renderLeaflet({
-    snap <- latest_snapshot()
-    if (nrow(snap) == 0 || all(is.na(snap$lat))) {
-      return(leaflet() %>% addTiles() %>% setView(lng = 32.5, lat = 1.4, zoom = 6))
+  # Shared by the on-screen table and the Excel download, so both always
+  # show exactly the same rows/columns/order.
+  build_today_table_df <- function() {
+    df <- today_assessments()
+    if (nrow(df) == 0) return(df[0, ])
+    if (length(input$today_status_filter) > 0) {
+      df <- df %>% filter(overall_category %in% input$today_status_filter)
     }
-    snap <- snap %>% filter(!is.na(lat), !is.na(lon))
-    leaflet(snap) %>% addTiles() %>%
-      addCircleMarkers(
-        lng = ~lon, lat = ~lat, radius = ~pmax(4, overall_pct / 8),
-        color = ~CATEGORY_COLORS[overall_category], fillOpacity = 0.8, stroke = FALSE,
-        popup = ~paste0("<b>", facility, "</b><br>Status: ", overall_category,
-                         "<br>Score: ", overall_pct, "%<br>Last assessed: ", format(date_of_assessment, "%d %b %Y"))
-      )
-  })
+    if (nrow(df) == 0) return(df[0, ])
+    df %>%
+      transmute(
+        `Health Facility` = facility,
+        `Date Assessed` = format(date_of_assessment, "%d %b %Y"),
+        Assessor = ifelse(is.na(assessor_name) | assessor_name == "", "--", assessor_name),
+        `Repeat #` = case_when(
+          is.na(is_repeat) ~ "Unknown",
+          !is_repeat ~ "Baseline",
+          TRUE ~ as.character(followup_number)
+        ),
+        Score = overall_pct,
+        Status = overall_category
+      ) %>%
+      arrange(desc(Score))
+  }
 
-  output$dispatch_table <- renderDT({
-    snap <- latest_snapshot()
-    if (nrow(snap) == 0) return(datatable(data.frame(Message = "No data"), rownames = FALSE))
-    dl <- domain_long_selected()
-    critical_gaps <- dl %>% filter(category == "Critical") %>%
-      group_by(facility) %>% summarise(critical_domains = paste(label, collapse = "; "), .groups = "drop")
-    out <- snap %>%
-      left_join(critical_gaps, by = "facility") %>%
-      transmute(Facility = facility, Readiness = overall_pct,
-                `Domains with Critical Gaps` = ifelse(is.na(critical_domains), "None", critical_domains),
-                `Last Assessed` = format(date_of_assessment, "%d %b %Y"), Status = overall_category) %>%
-      arrange(Readiness)
-    datatable(out, options = list(pageLength = 15, scrollX = TRUE), rownames = FALSE, filter = "top") %>%
+  output$today_table <- renderDT({
+    out <- build_today_table_df()
+    if (nrow(out) == 0) {
+      return(datatable(data.frame(Message = "No assessments recorded for the selected date range and filters"), rownames = FALSE))
+    }
+    datatable(out, options = list(pageLength = 20, scrollX = TRUE), rownames = FALSE, filter = "top") %>%
+      formatRound("Score", digits = 2) %>%
+      formatStyle("Score",
+                  backgroundColor = styleInterval(c(50, 79), unname(CATEGORY_COLORS[c("Critical", "At Risk", "Ready")])),
+                  color = styleInterval(c(50, 79), c("white", "black", "white")),
+                  fontWeight = "bold") %>%
       formatStyle("Status", backgroundColor = styleEqual(names(CATEGORY_COLORS), unname(CATEGORY_COLORS)),
                   color = styleEqual(c("Critical", "At Risk", "Ready"), c("white", "black", "white")), fontWeight = "bold")
   })
+
+  output$today_table_download <- downloadHandler(
+    filename = function() paste0("ipc_assessments_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
+    content = function(file) {
+      write_xlsx(build_today_table_df(), file)
+    }
+  )
+
+  # ============================================================================
+  # TAB: Repeat Assessments -- follow-up visits only (baseline excluded)
+  # ============================================================================
+  # is_repeat comes from compute_assessment_sequence() -- TRUE only for a
+  # facility's 2nd+ submission, by actual chronological order (see the note
+  # on that function in ipc_helpers.R). `is_repeat %in% TRUE` (rather than
+  # `is_repeat == TRUE`) safely excludes the rare NA case (undated rows)
+  # instead of erroring.
+  repeat_assessments <- reactive({
+    df <- filtered_data()
+    if (nrow(df) == 0) return(df)
+    req(input$repeat_date_range)
+    df %>% filter(
+      !is.na(date_of_assessment),
+      date_of_assessment >= input$repeat_date_range[1],
+      date_of_assessment <= input$repeat_date_range[2],
+      is_repeat %in% TRUE
+    )
+  })
+
+  output$no_data_banner_repeat <- renderUI(no_data_banner_ui())
+
+  output$repeat_kpi_total <- renderText({ format(nrow(repeat_assessments()), big.mark = ",") })
+  output$repeat_kpi_red <- renderText({
+    df <- repeat_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "Critical", na.rm = TRUE)
+  })
+  output$repeat_kpi_yellow <- renderText({
+    df <- repeat_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "At Risk", na.rm = TRUE)
+  })
+  output$repeat_kpi_green <- renderText({
+    df <- repeat_assessments(); if (nrow(df) == 0) return("0")
+    sum(df$overall_category == "Ready", na.rm = TRUE)
+  })
+
+  build_repeat_table_df <- function() {
+    df <- repeat_assessments()
+    if (nrow(df) == 0) return(df[0, ])
+    if (length(input$repeat_status_filter) > 0) {
+      df <- df %>% filter(overall_category %in% input$repeat_status_filter)
+    }
+    if (nrow(df) == 0) return(df[0, ])
+    df %>%
+      transmute(
+        `Health Facility` = facility,
+        `Date Assessed` = format(date_of_assessment, "%d %b %Y"),
+        Assessor = ifelse(is.na(assessor_name) | assessor_name == "", "--", assessor_name),
+        `Repeat #` = as.character(followup_number),
+        Score = overall_pct,
+        Status = overall_category
+      ) %>%
+      arrange(desc(Score))
+  }
+
+  output$repeat_table <- renderDT({
+    out <- build_repeat_table_df()
+    if (nrow(out) == 0) {
+      return(datatable(data.frame(Message = "No repeat assessments recorded for the selected date range and filters"), rownames = FALSE))
+    }
+    datatable(out, options = list(pageLength = 20, scrollX = TRUE), rownames = FALSE, filter = "top") %>%
+      formatRound("Score", digits = 2) %>%
+      formatStyle("Score",
+                  backgroundColor = styleInterval(c(50, 79), unname(CATEGORY_COLORS[c("Critical", "At Risk", "Ready")])),
+                  color = styleInterval(c(50, 79), c("white", "black", "white")),
+                  fontWeight = "bold") %>%
+      formatStyle("Status", backgroundColor = styleEqual(names(CATEGORY_COLORS), unname(CATEGORY_COLORS)),
+                  color = styleEqual(c("Critical", "At Risk", "Ready"), c("white", "black", "white")), fontWeight = "bold")
+  })
+
+  output$repeat_table_download <- downloadHandler(
+    filename = function() paste0("ipc_repeat_assessments_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
+    content = function(file) {
+      write_xlsx(build_repeat_table_df(), file)
+    }
+  )
 
   # ============================================================================
   # TAB 2: Summary View
@@ -515,7 +669,7 @@ server <- function(input, output, session) {
             zmid = 0, zmin = -100, zmax = 100,
             text = ~paste0(facility, " / ", label, ": ", ifelse(delta >= 0, "+", ""), delta), hoverinfo = "text") |>
       layout(xaxis = list(title = "", tickangle = -35), yaxis = list(title = "", tickfont = list(size = 9)),
-             height = max(500, n_distinct(change_df$facility) * 18))
+             height = min(4000, max(500, n_distinct(change_df$facility) * 18)))
   })
 
   output$progress_table <- renderDT({
@@ -539,7 +693,7 @@ server <- function(input, output, session) {
   observeEvent(filtered_data(), {
     df <- filtered_data()
     if (nrow(df) == 0) return()
-    updateSelectInput(session, "dd_facility", choices = sort(unique(df$facility)))
+    updateSelectizeInput(session, "dd_facility", choices = sort(unique(df$facility)), server = TRUE)
   })
 
   dd_facility_all <- reactive({
